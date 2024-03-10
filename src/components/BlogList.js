@@ -1,0 +1,152 @@
+import {useState, useEffect, useCallback } from "react";
+import axios from "axios";
+import Card from "../components/Card";
+import { useNavigate, useLocation } from 'react-router-dom';
+import LoadingSpinner from "../components/LoadingSpinner";
+import Pagination from './Pagination';
+import propTypes from "prop-types"
+import useToast from "../hooks/toast";
+
+const BlogList = ({ isAdmin }) =>{
+    const navigate = useNavigate();
+    const location = useLocation();
+    const params = new URLSearchParams(location.search);
+    const pageParam = params.get('page');
+    const [posts, setPosts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [numberOfPosts, setNumberOfPosts] = useState(0);
+    const [numberOfPages, setNumberOfPages] = useState(0);
+    const [searchText, setSearchText] = useState('');
+    const [ error, setError] = useState('');
+
+    const { addToast } = useToast();
+    const limit = 5;
+
+    useEffect(() => {
+        setNumberOfPages(Math.ceil(numberOfPosts/limit));
+    }, [numberOfPosts]);
+
+    const onClickPageButton = (page) => {
+        navigate(`${location.pathname}?page=${page}`)
+        setCurrentPage(page);
+        getPosts(page);
+    }
+    const getPosts = useCallback((page = 1) => {
+        let params = {
+            _page : page,
+            _limit : limit,
+            _sort: 'id',
+            _order: 'desc',
+            title_like: searchText
+        }
+        if (!isAdmin){
+            params = { ...params, publish: true };
+        }
+
+        axios.get(`http://localhost:3001/posts`, {
+            params
+        }).then((res) => {
+            setNumberOfPosts(res.headers['x-total-count']);
+            setPosts(res.data);
+            setLoading(false);
+        }).catch(e => {
+            setLoading(false);
+            setError('Something went wrong in database');
+            addToast({
+                text:'Something went wrong',
+                type: 'danger'
+            })
+        })
+    }, [addToast, isAdmin, searchText]);
+
+    useEffect(() => {
+        setCurrentPage(parseInt(pageParam) || 1);
+        getPosts();
+    }, [getPosts, pageParam]);
+
+    const deleteBlog = (e, id) => {
+        e.stopPropagation();
+        axios.delete(`http://localhost:3001/posts/${id}`).then(() => {
+            // setPosts(prevPosts => prevPosts.filter(post => post.id !== id))
+            getPosts(1);
+            addToast({
+                text: 'Successfully deleted',
+                type: 'success'
+            });
+        }).catch(e => {
+            addToast({
+                text:'The Blog could not be deleted',
+                type: 'danger'
+            })
+        })
+    };
+
+    if (loading){
+        return (
+            <LoadingSpinner />
+        );
+    }
+    const renderBlogList = () => {
+        return posts.map(post=>{
+            return (
+                <Card key={post.id} title={post.title} 
+                onClick={() => navigate(`/blogs/${post.id}`)}>
+    
+                {isAdmin ? (<div>
+                    <button 
+                    className="btn btn-danger btn-sm"
+                    onClick={(e) => deleteBlog(e, post.id)}
+                    >
+                    Delete
+                    </button>
+                </div>) : null}
+                </Card>
+            );
+        })
+    }
+
+    const onSearch = (e) => {
+        if (e.key === 'Enter') {
+            navigate(`${location.pathname}?page=1`)
+            setCurrentPage(1);
+            getPosts(1); //검색 결과 페이지 기본값 1페이지
+        }
+    }
+    if ( error) {
+        return <div> {error} </div>
+    }
+
+    return (
+        <div>
+
+            <input className="form-control" 
+                    type="text"
+                    placeholder="SEACH"
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    onKeyUp={onSearch}/>
+
+            <hr />
+            {posts.length === 0 ?
+            <div> NO BLOG POSTS FOUND</div> : 
+            <>
+                        {renderBlogList()}
+            {numberOfPages > 1 && <Pagination
+                currentPage={currentPage}
+                numberOfPages={numberOfPages}
+                onClick={onClickPageButton}/>
+            }
+            </> }
+        </div>
+    )
+};
+BlogList.propTypes = {
+    isAdmin: propTypes.bool
+};
+BlogList.defaultProps = {
+    isAdmin: false
+};
+
+
+export default BlogList;
